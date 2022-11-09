@@ -13,6 +13,7 @@ import { Context } from './resolvers/context';
 import authMiddleware from './middlewares/auth';
 import logger from './helpers/logger';
 import cors from 'cors';
+import { initRedis } from './config/redis';
 
 const PORT = process.env.PORT;
 const isProduction = process.env.NODE_ENV === 'production';
@@ -44,7 +45,7 @@ async function startApolloServer() {
   );
   const httpServer = http.createServer(app);
 
-  await initPrisma();
+  await Promise.all([initPrisma(), initRedis()]);
 
   const schema = await getSchema();
   const server = new CustomApolloServer({

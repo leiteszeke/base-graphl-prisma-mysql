@@ -47,7 +47,6 @@ const authMiddleware = () => {
           const user = await models.User.findFirst({
             where: {
               id: verifiedUser.id,
-              firebaseId: verifiedUser.firebaseId,
             },
           });
 

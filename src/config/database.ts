@@ -4,8 +4,12 @@ import logger from '../helpers/logger';
 export const prisma = new PrismaClient();
 
 export const initPrisma = async () => {
-  await prisma
-    .$connect()
-    .then(() => logger.info('🐘 MongoDB connected'))
-    .catch((err) => logger.error(`🐘 MongoDB connection error`, err));
+  try {
+    await prisma
+      .$connect()
+      .then(() => logger.info('🛢  MySQL connected'))
+      .catch((err) => logger.error(`🛢  MySQL connection error`, err));
+  } catch (e) {
+    logger.error(`🛢  MySQL connection error`, e);
+  }
 };

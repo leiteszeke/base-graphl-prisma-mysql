@@ -1,20 +1,52 @@
 import pino, { LogFn } from 'pino';
+import fs from 'fs';
+import path from 'path';
+import pinoms from 'pino-multi-stream';
 
-export const pinoConfig =
-  process.env.NODE_ENV === 'local'
-    ? {
-        transport: {
-          target: 'pino-pretty',
-          options: {
-            colorize: true,
-            levelFirst: true,
-            translateTime: 'yyyy-dd-mm, h:MM:ss TT',
-          },
-        },
+const moreOptions = (level?: pino.Level) => {
+  if (!level) {
+    return {};
+  }
+
+  return {
+    ignore: 'level,pid,hostname',
+    messageFormat: (log: pino.LogDescriptor, messageKey: string) =>
+      `${log[messageKey]}`,
+  };
+};
+
+const prettyStream = (level?: pino.Level): pino.DestinationStream => {
+  const config: pinoms.PrettyStreamOptions = {
+    prettyPrint: {
+      colorize: level ? false : true,
+      levelFirst: true,
+      translateTime: 'yyyy-mm-dd HH:MM:ss',
+      ...moreOptions(level),
+    },
+  };
+
+  if (level) {
+    config.dest = fs.createWriteStream(
+      path.join(__dirname, '../../logs', `${level}.log`),
+      {
+        flags: 'a+',
       }
-    : {};
+    );
+  }
 
-const pinoLogger = pino(pinoConfig);
+  return pinoms.prettyStream(config);
+};
+
+const streams: pino.StreamEntry[] | pino.DestinationStream[] =
+  process.env.NODE_ENV !== 'local'
+    ? [
+        { level: 'debug', stream: prettyStream('debug') },
+        { level: 'error', stream: prettyStream('error') },
+        { level: 'info', stream: prettyStream('info') },
+      ]
+    : [{ stream: prettyStream() }];
+
+const pinoLogger = pinoms(pinoms.multistream(streams) as pino.LoggerOptions);
 
 const parseLog = (...args: Parameters<LogFn>): Parameters<LogFn> => {
   if (args.length <= 1) {
