@@ -47,3 +47,19 @@ export class BadRequestError extends ApolloError {
     Object.defineProperty(this, 'name', { value: 'BadRequestError' });
   }
 }
+
+export class InvalidFileError extends ApolloError {
+  constructor(message: string) {
+    super(message, 'INVALID_FILE');
+
+    Object.defineProperty(this, 'name', { value: 'InvalidFileError' });
+  }
+}
+
+export class WithoutPermissionsError extends ApolloError {
+  constructor(message: string) {
+    super(message, 'NOT_ALLOWED');
+
+    Object.defineProperty(this, 'name', { value: 'NotPermissionError' });
+  }
+}

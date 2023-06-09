@@ -13,24 +13,49 @@ import { Context } from './resolvers/context';
 import authMiddleware from './middlewares/auth';
 import logger from './helpers/logger';
 import cors from 'cors';
-import { initRedis } from './config/redis';
+import fileUpload from 'express-fileupload';
+import Tasks from './tasks';
+import initSockets from './config/sockets';
+import { Server } from 'socket.io';
+import Config from './helpers/config';
 
-const PORT = process.env.PORT;
-const isProduction = process.env.NODE_ENV === 'production';
-
-async function startApolloServer() {
+async function startApolloServer(io?: Server) {
   const app = express();
   app.use(express.json());
-  app.use(cors());
 
-  app.use('/assets', express.static(__dirname + '/assets'));
+  app.use(
+    cors({
+      exposedHeaders: ['Content-Filename'],
+    })
+  );
+
+  app.use(
+    fileUpload({
+      createParentPath: true,
+    })
+  );
 
   // Routes outside authMiddleware
-  app.use('/health', (_, res) => res.json({ status: 'ok' }));
-  app.use('/tasks', async (req, res) => {
-    if (req.headers['tasks-api-key'] !== process.env.TASKS_API_KEY) {
+  app.get('/', (_, res) => res.json({ status: 'ok' }));
+  app.get('/health', (_, res) => res.json({ status: 'ok' }));
+
+  app.post('/tasks', async (req, res) => {
+    if (req.headers['tasks-api-key'] !== Config.tasksApiKey) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
+
+    const taskName = req.body.taskId;
+    const payload = req.body.payload;
+
+    if (!Tasks[taskName]) {
+      logger.error(`Task ${taskName} not found`);
+
+      return res.status(400);
+    }
+
+    logger.info('Running task', { taskName });
+
+    await Tasks[taskName](payload);
 
     res.json({ data: [] });
   });
@@ -39,21 +64,23 @@ async function startApolloServer() {
 
   app.use(
     helmet({
-      crossOriginEmbedderPolicy: isProduction,
-      contentSecurityPolicy: isProduction ? undefined : false,
+      crossOriginEmbedderPolicy: Config.isProduction,
+      contentSecurityPolicy: Config.isProduction ? undefined : false,
     })
   );
   const httpServer = http.createServer(app);
 
-  await Promise.all([initPrisma(), initRedis()]);
+  await initPrisma();
 
   const schema = await getSchema();
+
   const server = new CustomApolloServer({
     persistedQueries: false,
     schema,
     context: async ({ req }) => {
       return {
         user: req.body.user,
+        io,
         graphQL: {
           query: req.body.query,
           variables: req.body.variables,
@@ -61,11 +88,18 @@ async function startApolloServer() {
       };
     },
     formatError: (err: GraphQLError, context: Context) => {
-      logger.error(`☸️ GraphQL ${err.extensions.code} error`, {
+      const warnCodes = ['NOT_ALLOWED', 'USER_NOT_FOUND'];
+      const input = {
         errorMessage: err.message,
         code: err.extensions.code,
         input: context.graphQL,
-      });
+      };
+
+      if (warnCodes.includes(err.extensions.code as string)) {
+        logger.warn(`☸️ GraphQL ${err.extensions.code} warning`, input);
+      } else {
+        logger.error(`☸️ GraphQL ${err.extensions.code} error`, input);
+      }
 
       return {
         message: err.message,
@@ -78,12 +112,22 @@ async function startApolloServer() {
   server.applyMiddleware({ app });
 
   await new Promise<void>((resolve) =>
-    httpServer.listen({ port: PORT }, resolve)
+    httpServer.listen({ port: Config.port }, resolve)
   );
 
   logger.info(
-    `🚀 Server ready at http://localhost:${PORT}${server.graphqlPath}`
+    `🚀 Server ready at http://localhost:${Config.port}${server.graphqlPath}`
   );
 }
 
-startApolloServer();
+const init = async () => {
+  if (Config.socketEnabled) {
+    const io = await initSockets();
+
+    startApolloServer(io);
+  } else {
+    startApolloServer();
+  }
+};
+
+init();

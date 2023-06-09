@@ -4,8 +4,9 @@ import models from '../models';
 import jwt from 'jsonwebtoken';
 import gql from 'graphql-tag';
 import { User } from '@prisma/client';
+import Config from '../helpers/config';
 
-const publicQueries = ['loginUser', 'createUser'];
+const publicQueries = ['loginUser', 'loginCodeUser', 'createUser'];
 
 const parseQuery = (query: string) => {
   if (!query) {
@@ -27,7 +28,6 @@ const authMiddleware = () => {
   return async function (req: Request, res: Response, next: NextFunction) {
     const accessToken = req.headers && req.headers.authorization;
     const apiKey = req.headers && req.headers['x-api-key'];
-
     const isPublic = parseQuery(req.body.query);
 
     if (isPublic) {
@@ -38,7 +38,7 @@ const authMiddleware = () => {
       try {
         const verified = jwt.verify(
           accessToken.replace('Bearer ', ''),
-          process.env.TOKEN_SECRET ?? ''
+          Config.tokenSecret
         );
 
         if (verified) {
@@ -47,26 +47,38 @@ const authMiddleware = () => {
           const user = await models.User.findFirst({
             where: {
               id: verifiedUser.id,
+              deletedAt: null,
             },
           });
 
           if (user) {
             req.body = {
               ...req.body,
-              user,
+              user: {
+                id: user.id,
+                name: user.name,
+                lastname: user.lastname,
+                email: user.email,
+              },
             };
 
             return next();
           }
         }
       } catch (error) {
-        logger.error('🚪 Access Token Auth Error', error);
+        logger.error('🚪 Access Token Auth Error', { error });
       }
     }
 
-    logger.debug(`No user with the provided token has been found.`, {
+    logger.error(`No user with the provided token has been found.`, {
+      accessToken,
+      apiKey,
       withAccessToken: !!accessToken,
       withApiKey: !!apiKey,
+      headers: req.headers,
+      body: req.body,
+      query: req.query,
+      url: req.url,
     });
 
     return res.status(401).json({ message: 'Unauthorized' });

@@ -19,7 +19,9 @@ const getSchema = async () => {
     });
     return schema;
   } catch (error) {
-    logger.error('☸️ Schema errors', error);
+    logger.error('☸️ Schema errors', {
+      error,
+    });
   }
 };
 
